@@ -1670,6 +1670,58 @@ class PackageInstaller(object):
                                'reported errors for failing package(s).')
 
 
+def longest_prefix(string, capture=True):
+    """Return a regular expression that matches a the longest possible prefix of string.
+
+    i.e., if the input string is ``the_quick_brown_fox``, then::
+
+        m = re.compile(longest_prefix('the_quick_brown_fox'))
+        m.match('the_').group(1)                 == 'the_'
+        m.match('the_quick').group(1)            == 'the_quick'
+        m.match('the_quick_brown_fox').group(1)  == 'the_quick_brown_fox'
+        m.match('the_xquick_brown_fox').group(1) == 'the_'
+        m.match('the_quickx_brown_fox').group(1) == 'the_quick'
+
+    """
+    if len(string) < 2:
+        return string
+
+    return "(%s%s%s?)" % (
+        "" if capture else "?:",
+        string[0],
+        partial_match(string[1:], capture=False)
+    )
+
+
+def padding_match_re():
+    pad = spack.util.path.SPACK_PATH_PADDING_CHARS
+    return re.compile(
+        "(%s%s)*%s(?=%s)" % (os.sep, pad, longest_prefix(pad), os.sep)
+    )
+
+
+def padding_filter(string):
+    """Filter used to reduce output from path padding in log output.
+
+    This turns paths like this:
+
+        foo/bar/spack_path_placeholder/spack_path_placeholder/spack_path_/...
+
+    Into paths like this:
+
+        foo/bar/spack_path_placeholder_57/...
+
+    Where '_57' indicates that 'spack_path_placeholder' was repeated for 57
+    characters, including the path separator '/'.
+
+    """
+    pad = padding_match_re()
+    return pad.sub(
+        lambda m: "%s%s_%d" % (os.sep, pad, len(m.group(0)) - 1),
+        string
+    )
+
+
 def build_process(pkg, kwargs):
     """Perform the installation/build of the package.
 
@@ -1686,6 +1738,11 @@ def build_process(pkg, kwargs):
     verbose = kwargs.get('verbose', False)
 
     timer = Timer()
+
+    # if we are using a padded path, filter the output
+    pad_len = spack.config.get("config:install_tree:padded_length", None)
+    filter_fn = padding_filter if pad_len else None
+
     if not fake:
         if not skip_patch:
             pkg.do_patch()
@@ -1758,8 +1815,10 @@ def build_process(pkg, kwargs):
                     try:
                         # DEBUGGING TIP - to debug this section, insert an IPython
                         # embed here, and run the sections below without log capture
-                        with log_output(log_file, echo, True,
-                                        env=unmodified_env) as logger:
+                        with log_output(
+                                log_file, echo, True, env=unmodified_env,
+                                filter_fn=filter_fn
+                        ) as logger:
 
                             with logger.force_echo():
                                 inner_debug_level = tty.debug_level()
