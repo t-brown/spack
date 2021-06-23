@@ -158,3 +158,70 @@ def canonicalize_path(path):
             tty.debug("Using current working directory as base for abspath")
 
     return os.path.normpath(path)
+
+
+
+def longest_prefix_re(string, capture=True):
+    """Return a regular expression that matches a the longest possible prefix of string.
+
+    i.e., if the input string is ``the_quick_brown_fox``, then::
+
+        m = re.compile(longest_prefix('the_quick_brown_fox'))
+        m.match('the_').group(1)                 == 'the_'
+        m.match('the_quick').group(1)            == 'the_quick'
+        m.match('the_quick_brown_fox').group(1)  == 'the_quick_brown_fox'
+        m.match('the_xquick_brown_fox').group(1) == 'the_'
+        m.match('the_quickx_brown_fox').group(1) == 'the_quick'
+
+    """
+    if len(string) < 2:
+        return string
+
+    return "(%s%s%s?)" % (
+        "" if capture else "?:",
+        string[0],
+        longest_prefix_re(string[1:], capture=False)
+    )
+
+
+#: regex cache for padding_filter function
+_filter_re = None
+
+
+def padding_filter(string):
+    """Filter used to reduce output from path padding in log output.
+
+    This turns paths like this:
+
+        foo/bar/spack_path_placeholder/spack_path_placeholder/spack_path_/...
+
+    Into paths like this:
+
+        foo/bar/spack_path_placeholder_57/...
+
+    Where '_57' indicates that 'spack_path_placeholder' was repeated for 57
+    characters, including the path separator '/'.
+
+    For a path to match and be filtered, the placeholder must appear in its
+    entirety at least one time. e.g., "/spack/" would not be filtered, but
+    "/spack_path_placeholder/spack/" would be.
+
+    """
+    global _filter_re
+
+    pad = spack.util.path.SPACK_PATH_PADDING_CHARS
+    if not _filter_re:
+        _filter_re = re.compile(
+            "(%s%s)+(%s%s)?(?=%s)" % (
+                os.sep,
+                pad,
+                os.sep,
+                longest_prefix_re(pad),
+                os.sep
+            )
+        )
+
+    return _filter_re.sub(
+        lambda m: "%s%s[%d]" % (os.sep, pad, len(m.group(0)) - 1),
+        string
+    )
