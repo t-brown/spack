@@ -46,7 +46,7 @@ class Mfem(Package, CudaPackage, ROCmPackage):
 
     # 'develop' is a special version that is always larger (or newer) than any
     # other version.
-    version('develop', branch='stefanozampini/add-petsc-cuda-support')
+    version('develop', branch='master')
 
     version('4.2.0',
             '4352a225b55948d2e73a5ee88cece0e88bdbe7ba6726a23d68b2736d3221a86d',
